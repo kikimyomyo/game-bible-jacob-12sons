@@ -1,0 +1,470 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>야곱의 12아들 순서 맞추기</title>
+
+  <!-- React 18 + Babel standalone -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Tailwind CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- 드래그&드롭 (모바일 터치 포함) -->
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+
+  <!-- 게임별 설정 (이름/엔드포인트/시트탭) -->
+  <script src="./config.js"></script>
+  <!-- 공통 인프라 (deploy.sh가 _shared/에서 복사) -->
+  <script src="./tts.js"></script>      <!-- window.GameTTS -->
+  <script src="./sfx.js"></script>      <!-- window.GameSFX -->
+  <script src="./recorder.js"></script> <!-- window.GameRecorder -->
+
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { min-height: 100%; }
+    body { font-family: ui-sans-serif, system-ui, -apple-system, "Apple SD Gothic Neo", sans-serif; background: #f8fafc; }
+    @keyframes slideIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel" data-presets="react">
+    const { useState, useEffect, useMemo, useRef } = React;
+    const { speak, speakQueue, toEnglish, toKorean } = window.GameTTS;
+    const sfx = window.GameSFX;
+
+    // ─────────────────────────────────────────
+    // 공통 훅/컴포넌트 (모든 게임에서 재사용)
+    // ─────────────────────────────────────────
+
+    // 화면 폭 < 640px 감지 (선택지 2열 → 1열 등에 사용)
+    function useIsMobile(breakpoint = 640) {
+      const [m, setM] = useState(() => (typeof window !== 'undefined' ? window.innerWidth < breakpoint : false));
+      useEffect(() => {
+        const r = () => setM(window.innerWidth < breakpoint);
+        window.addEventListener('resize', r);
+        return () => window.removeEventListener('resize', r);
+      }, [breakpoint]);
+      return m;
+    }
+
+    // 🔊 작은 스피커 아이콘 (텍스트 옆에 붙여 TTS 재생)
+    //   <SpeakIcon text="hello" lang="en-US" />
+    function SpeakIcon({ text, lang = 'en-US', size = 20, color = 'rgba(255,255,255,0.25)' }) {
+      return (
+        <span
+          role="button"
+          aria-label="듣기"
+          onClick={(e) => { e.stopPropagation(); speak(text, lang); }}
+          onMouseDown={(e) => e.preventDefault()}
+          style={{
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            width: size + 10, height: size + 10, borderRadius: '50%',
+            background: color, marginRight: 6, cursor: 'pointer',
+            fontSize: size * 0.85, userSelect: 'none',
+          }}
+        >
+          🔊
+        </span>
+      );
+    }
+
+    // 미디어 블록: mp3 / mp4 / YouTube 중 선택해서 문제 중간에 삽입
+    //   <MediaBlock media={{ type: 'audio'|'video'|'youtube', src: '...' }} />
+    function MediaBlock({ media }) {
+      if (!media) return null;
+      if (media.type === 'audio') return <audio src={media.src} controls className="w-full my-3" />;
+      if (media.type === 'video') return <video src={media.src} controls className="w-full rounded-lg my-3" />;
+      if (media.type === 'youtube') {
+        const id = media.src.includes('http')
+          ? (media.src.match(/(?:youtu\.be\/|v=)([\w-]{11})/) || [])[1]
+          : media.src;
+        return (
+          <div className="aspect-video my-3">
+            <iframe
+              className="w-full h-full rounded-lg"
+              src={`https://www.youtube.com/embed/${id}`}
+              title="media"
+              allow="accelerometer; autoplay; encrypted-media; gyroscope; picture-in-picture"
+              allowFullScreen
+            />
+          </div>
+        );
+      }
+      return null;
+    }
+
+    // 이름 입력 → 게임 → 기록 전송 래퍼
+    function GameShell({ children }) {
+      const [player, setPlayer] = useState('');
+      const [started, setStarted] = useState(false);
+      const startTimeRef = useRef(null);
+
+      const onStart = () => { sfx.click(); startTimeRef.current = Date.now(); setStarted(true); };
+
+      const submit = (payload) => {
+        const duration = startTimeRef.current ? Math.round((Date.now() - startTimeRef.current) / 1000) : null;
+        return window.GameRecorder.submit({ player, duration_sec: duration, ...payload });
+      };
+
+      if (!started) {
+        return (
+          <div style={{ maxWidth: 480, margin: '40px auto', padding: 24, background: 'white', borderRadius: 24, boxShadow: '0 10px 30px rgba(0,0,0,0.08)', textAlign: 'center' }}>
+            <h1 style={{ fontSize: '1.6em', fontWeight: 700, marginBottom: 18 }}>
+              {window.GAME_CONFIG?.title || '학습 게임'}
+            </h1>
+            <input
+              value={player}
+              onChange={(e) => setPlayer(e.target.value)}
+              placeholder="이름"
+              style={{ width: '100%', padding: '14px 16px', border: '2px solid #e5e7eb', borderRadius: 12, fontSize: '1.05em', marginBottom: 14, outline: 'none' }}
+            />
+            <button
+              disabled={!player.trim()}
+              onClick={onStart}
+              style={{ width: '100%', padding: '14px 20px', background: '#6366f1', color: 'white', border: 'none', borderRadius: 12, fontSize: '1.1em', fontWeight: 700, cursor: player.trim() ? 'pointer' : 'not-allowed', opacity: player.trim() ? 1 : 0.5 }}
+            >
+              시작하기 🎮
+            </button>
+          </div>
+        );
+      }
+
+      return children({ player, submit });
+    }
+
+    // ─────────────────────────────────────────
+    // App — 여기 GameBody만 바꾸면 됩니다.
+    //   - GameBody는 props로 { player, submit } 받음
+    //   - 게임 종료 시 submit({ score, total, answers, meta }) 호출
+    // ─────────────────────────────────────────
+    function App() {
+      return <GameShell>{({ player, submit }) => <GameBody player={player} submit={submit} />}</GameShell>;
+    }
+
+    // ───── 야곱의 12아들 순서 게임 ─────
+
+    // 출생 순서: 창세기 29-30, 35장
+    const ANSWER = [
+      { id: 1,  ko: "르우벤",   en: "Reuben",    emoji: "💧", mother: "레아",  note: "장남" },
+      { id: 2,  ko: "시므온",   en: "Simeon",    emoji: "⚔️", mother: "레아",  note: "둘째" },
+      { id: 3,  ko: "레위",     en: "Levi",      emoji: "📜", mother: "레아",  note: "제사장 지파" },
+      { id: 4,  ko: "유다",     en: "Judah",     emoji: "🦁", mother: "레아",  note: "사자 · 왕의 지파" },
+      { id: 5,  ko: "단",       en: "Dan",       emoji: "🐍", mother: "빌하",  note: "뱀" },
+      { id: 6,  ko: "납달리",   en: "Naphtali",  emoji: "🦌", mother: "빌하",  note: "놓인 사슴" },
+      { id: 7,  ko: "갓",       en: "Gad",       emoji: "🛡️", mother: "실바",  note: "군대" },
+      { id: 8,  ko: "아셀",     en: "Asher",     emoji: "🫒", mother: "실바",  note: "기름진 땅" },
+      { id: 9,  ko: "잇사갈",   en: "Issachar",  emoji: "🐴", mother: "레아",  note: "강건한 나귀" },
+      { id: 10, ko: "스불론",   en: "Zebulun",   emoji: "⛵", mother: "레아",  note: "바닷가" },
+      { id: 11, ko: "요셉",     en: "Joseph",    emoji: "🌾", mother: "라헬",  note: "이삭 묶음" },
+      { id: 12, ko: "베냐민",   en: "Benjamin",  emoji: "🐺", mother: "라헬",  note: "늑대" },
+    ];
+
+    function shuffleArr(arr) {
+      const a = [...arr];
+      for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+      }
+      // 완전히 정답과 같으면 다시 섞음 (아주 희귀)
+      if (a.every((x, i) => x.id === ANSWER[i].id)) return shuffleArr(arr);
+      return a;
+    }
+
+    function GameBody({ player, submit }) {
+      const isMobile = useIsMobile();
+      const [phase, setPhase] = useState('intro');   // 'intro' | 'play' | 'result'
+      const [order, setOrder] = useState(() => shuffleArr(ANSWER));
+      const [checked, setChecked] = useState(false);
+      const [hintsUsed, setHintsUsed] = useState(0);
+      const [intro, setIntro] = useState({ i: -1, playing: false }); // 학습 모드
+      const listRef = useRef(null);
+      const sortableRef = useRef(null);
+
+      // SortableJS 생성/해제
+      useEffect(() => {
+        if (phase !== 'play' || checked) {
+          if (sortableRef.current) { sortableRef.current.destroy(); sortableRef.current = null; }
+          return;
+        }
+        if (!listRef.current || !window.Sortable) return;
+        sortableRef.current = window.Sortable.create(listRef.current, {
+          animation: 220,
+          delay: 120,
+          delayOnTouchOnly: true,
+          ghostClass: 'son-ghost',
+          chosenClass: 'son-chosen',
+          onChoose: () => sfx.tap(),
+          onEnd: () => {
+            const ids = Array.from(listRef.current.children).map((c) => Number(c.dataset.id));
+            const next = ids.map((id) => ANSWER.find((a) => a.id === id));
+            setOrder(next);
+            sfx.click();
+          },
+        });
+        return () => {
+          if (sortableRef.current) { sortableRef.current.destroy(); sortableRef.current = null; }
+        };
+      }, [phase, checked]);
+
+      // 학습 모드: 1~12 순서대로 읽기
+      function startIntro() {
+        sfx.click();
+        setIntro({ i: 0, playing: true });
+      }
+      useEffect(() => {
+        if (!intro.playing) return;
+        const i = intro.i;
+        if (i >= ANSWER.length) { setIntro({ i: -1, playing: false }); return; }
+        const item = ANSWER[i];
+        window.speechSynthesis.cancel();
+        // 순번 한국어 → 이름 한국어 → 이름 영어 순차
+        speakQueue([
+          { text: `${i + 1}번, ${item.ko}`, lang: 'ko-KR' },
+          { text: item.en, lang: 'en-US' },
+        ]);
+        const t = setTimeout(() => setIntro({ i: i + 1, playing: true }), 1800);
+        return () => clearTimeout(t);
+      }, [intro]);
+
+      function stopIntro() {
+        try { window.speechSynthesis.cancel(); } catch (e) {}
+        setIntro({ i: -1, playing: false });
+      }
+
+      function reshuffle() {
+        sfx.click();
+        setOrder(shuffleArr(ANSWER));
+        setChecked(false);
+      }
+
+      function useHint() {
+        if (checked) return;
+        sfx.click();
+        const wrongPositions = order
+          .map((item, i) => (item.id !== ANSWER[i].id ? i : -1))
+          .filter((i) => i >= 0);
+        if (!wrongPositions.length) return;
+        const targetPos = wrongPositions[Math.floor(Math.random() * wrongPositions.length)];
+        const correctItem = ANSWER[targetPos];
+        const currentIdx = order.findIndex((it) => it.id === correctItem.id);
+        if (currentIdx < 0 || currentIdx === targetPos) return;
+        const next = [...order];
+        [next[targetPos], next[currentIdx]] = [next[currentIdx], next[targetPos]];
+        setOrder(next);
+        setHintsUsed((h) => h + 1);
+      }
+
+      function checkAnswers() {
+        sfx.click();
+        setChecked(true);
+        const correctCount = order.filter((it, i) => it.id === ANSWER[i].id).length;
+        setTimeout(() => {
+          if (correctCount === 12) sfx.correct();
+          else if (correctCount >= 8) sfx.partial();
+          else sfx.wrong();
+        }, 60);
+      }
+
+      function finish() {
+        sfx.finish();
+        const score = order.filter((it, i) => it.id === ANSWER[i].id).length;
+        submit({
+          score, total: 12,
+          answers: order.map((it, i) => ({
+            position: i + 1,
+            expected: ANSWER[i].ko,
+            chosen: it.ko,
+            ok: it.id === ANSWER[i].id,
+          })),
+          meta: { hints_used: hintsUsed },
+        });
+        setPhase('result');
+      }
+
+      function playAgain() {
+        sfx.click();
+        setOrder(shuffleArr(ANSWER));
+        setChecked(false);
+        setHintsUsed(0);
+        setPhase('play');
+      }
+
+      const correctCount = order.filter((it, i) => it.id === ANSWER[i].id).length;
+
+      // ─── 인트로(시작 안내) ───
+      if (phase === 'intro') {
+        return (
+          <div style={{ maxWidth: 720, margin: '20px auto', padding: isMobile ? 18 : 28, background: 'white', borderRadius: 20, boxShadow: '0 10px 30px rgba(0,0,0,0.08)' }}>
+            <h2 style={{ fontSize: isMobile ? '1.3em' : '1.6em', fontWeight: 800, marginBottom: 12 }}>
+              📖 야곱의 12아들 이름을 출생 순서대로 외워봐요, {player}!
+            </h2>
+            <p style={{ color: '#475569', marginBottom: 18, lineHeight: 1.6 }}>
+              아래 <b>"학습 모드"</b> 로 12명을 1번부터 12번까지 들어본 뒤,<br />
+              <b>"도전 시작"</b> 을 누르면 카드가 섞입니다. 순서에 맞게 <b>드래그</b>로 옮겨주세요!
+            </p>
+
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(3, 1fr)' : 'repeat(4, 1fr)', gap: 8, marginBottom: 18 }}>
+              {ANSWER.map((s, i) => (
+                <div key={s.id} style={{
+                  background: intro.i === i ? '#fef3c7' : '#f8fafc',
+                  border: '2px solid ' + (intro.i === i ? '#f59e0b' : '#e5e7eb'),
+                  borderRadius: 12, padding: 8, textAlign: 'center',
+                  transform: intro.i === i ? 'scale(1.05)' : 'scale(1)',
+                  transition: 'all 0.2s',
+                }}>
+                  <div style={{ fontSize: '0.72em', color: '#64748b' }}>{i + 1}번</div>
+                  <div style={{ fontSize: '1.7em' }}>{s.emoji}</div>
+                  <div style={{ fontWeight: 700, fontSize: '0.92em' }}>{s.ko}</div>
+                  <div style={{ fontSize: '0.75em', color: '#6b7280' }}>{s.en}</div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
+              {!intro.playing ? (
+                <button onClick={startIntro} style={btn('#6366f1')}>🎧 학습 모드 (1→12 듣기)</button>
+              ) : (
+                <button onClick={stopIntro} style={btn('#ef4444')}>⏸ 학습 멈추기</button>
+              )}
+              <button onClick={() => { sfx.click(); setPhase('play'); }} style={btn('#10b981')}>🎮 도전 시작</button>
+            </div>
+          </div>
+        );
+      }
+
+      // ─── 결과 ───
+      if (phase === 'result') {
+        return (
+          <div style={{ maxWidth: 520, margin: '60px auto', padding: 32, background: 'white', borderRadius: 24, textAlign: 'center', boxShadow: '0 20px 60px rgba(0,0,0,0.12)' }}>
+            <div style={{ fontSize: '4em', marginBottom: 10 }}>🏆</div>
+            <h2 style={{ fontSize: '2em', fontWeight: 800, marginBottom: 14 }}>참 잘했어요!</h2>
+            <p style={{ color: '#64748b', marginBottom: 10 }}>{player} 님</p>
+            <div style={{ fontSize: '3.2em', fontWeight: 900, color: '#6366f1' }}>{correctCount}/12</div>
+            <p style={{ color: '#6b7280', marginTop: 10 }}>힌트 {hintsUsed}회 사용</p>
+            <button onClick={playAgain} style={{ ...btn('#6366f1'), width: '100%', marginTop: 24 }}>
+              다시 도전하기 🔁
+            </button>
+          </div>
+        );
+      }
+
+      // ─── 플레이 화면 ───
+      const cols = isMobile ? 2 : 4;
+      return (
+        <div style={{ maxWidth: 900, margin: '14px auto', padding: isMobile ? 10 : 20 }}>
+          <style>{`
+            .son-ghost { opacity: 0.35; }
+            .son-chosen { transform: scale(1.06); box-shadow: 0 12px 28px rgba(99,102,241,0.35); }
+          `}</style>
+          <div style={{ background: 'white', borderRadius: 18, padding: isMobile ? 14 : 20, boxShadow: '0 6px 18px rgba(0,0,0,0.06)', marginBottom: 14 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+              <h3 style={{ fontWeight: 800, fontSize: isMobile ? '1.05em' : '1.2em' }}>
+                🙋 {player} · 드래그해서 1번부터 12번 자리까지 순서대로!
+              </h3>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <button onClick={reshuffle} style={smallBtn('#94a3b8')}>🔀 다시 섞기</button>
+                <button onClick={useHint} style={smallBtn('#f59e0b')}>💡 힌트 ({hintsUsed}회)</button>
+              </div>
+            </div>
+            {checked && (
+              <div style={{
+                marginTop: 12, padding: 12, borderRadius: 12,
+                background: correctCount === 12 ? '#d1fae5' : correctCount >= 8 ? '#fef3c7' : '#fee2e2',
+                color: '#1f2937', fontWeight: 700,
+              }}>
+                {correctCount === 12 ? '🎉 완벽해요! 12명 모두 맞았어요!' : `✏️ ${correctCount}/12 맞음 — 빨간 카드를 다시 옮겨보세요.`}
+              </div>
+            )}
+          </div>
+
+          <div
+            ref={listRef}
+            style={{
+              display: 'grid',
+              gridTemplateColumns: `repeat(${cols}, 1fr)`,
+              gap: isMobile ? 8 : 12,
+              touchAction: 'none',
+            }}
+          >
+            {order.map((item, i) => {
+              const ok = checked && item.id === ANSWER[i].id;
+              const wrong = checked && item.id !== ANSWER[i].id;
+              return (
+                <div
+                  key={item.id}
+                  data-id={item.id}
+                  style={{
+                    background: ok ? '#d1fae5' : wrong ? '#fee2e2' : 'white',
+                    border: '3px solid ' + (ok ? '#10b981' : wrong ? '#ef4444' : '#e5e7eb'),
+                    borderRadius: 16, padding: isMobile ? 10 : 14, textAlign: 'center',
+                    cursor: checked ? 'default' : 'grab',
+                    userSelect: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
+                    position: 'relative', minHeight: isMobile ? 128 : 150,
+                  }}
+                >
+                  <div style={{
+                    position: 'absolute', top: 6, left: 8,
+                    fontSize: '0.72em', fontWeight: 800,
+                    color: ok ? '#065f46' : wrong ? '#991b1b' : '#64748b',
+                  }}>
+                    {i + 1}번 자리
+                  </div>
+                  <div style={{ fontSize: isMobile ? '2.3em' : '2.8em', lineHeight: 1, marginTop: 10, marginBottom: 6 }}>
+                    {item.emoji}
+                  </div>
+                  <div style={{ fontSize: isMobile ? '1em' : '1.1em', fontWeight: 800 }}>
+                    {item.ko}
+                  </div>
+                  <div style={{ fontSize: '0.78em', color: '#6b7280', marginBottom: 6 }}>
+                    {item.en}
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'center', gap: 4 }}>
+                    <SpeakIcon text={item.ko} lang="ko-KR" size={14} color="rgba(99,102,241,0.15)" />
+                    <SpeakIcon text={item.en} lang="en-US" size={14} color="rgba(16,185,129,0.15)" />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap', marginTop: 18 }}>
+            {!checked ? (
+              <button onClick={checkAnswers} style={btn('#6366f1')}>✅ 정답 확인</button>
+            ) : correctCount === 12 ? (
+              <button onClick={finish} style={btn('#10b981')}>🎉 완료하고 기록하기</button>
+            ) : (
+              <>
+                <button onClick={() => { sfx.click(); setChecked(false); }} style={btn('#f59e0b')}>✏️ 다시 고치기</button>
+                <button onClick={finish} style={btn('#6b7280')}>여기서 끝내기</button>
+              </>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    function btn(color) {
+      return {
+        padding: '14px 22px', fontSize: '1.05em', fontWeight: 800, color: 'white',
+        background: color, border: 'none', borderRadius: 14, cursor: 'pointer',
+        boxShadow: '0 6px 14px rgba(0,0,0,0.12)', minHeight: 54,
+      };
+    }
+    function smallBtn(color) {
+      return {
+        padding: '8px 14px', fontSize: '0.92em', fontWeight: 700, color: 'white',
+        background: color, border: 'none', borderRadius: 22, cursor: 'pointer',
+      };
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
