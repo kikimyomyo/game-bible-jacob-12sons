@@ -242,12 +242,10 @@
         utterEn.lang = 'en-US';
         utterEn.rate = 0.9;
 
-        // 가능하면 각 언어 voice 명시
+        // 공용 pickVoice (노벨티/장난 음성 제외 + 선호 음성 우선)
         try {
-          const voices = window.speechSynthesis.getVoices() || [];
-          const pick = (prefix) => voices.find((v) => v.lang && v.lang.toLowerCase().startsWith(prefix)) || null;
-          const koVoice = pick('ko');
-          const enVoice = pick('en');
+          const koVoice = window.GameTTS && window.GameTTS.pickVoice('ko-KR');
+          const enVoice = window.GameTTS && window.GameTTS.pickVoice('en-US');
           if (koVoice) utterKo.voice = koVoice;
           if (enVoice) utterEn.voice = enVoice;
         } catch (e) {}
