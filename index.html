@@ -152,18 +152,18 @@
 
     // 출생 순서: 창세기 29-30, 35장
     const ANSWER = [
-      { id: 1,  ko: "르우벤",   en: "Reuben",    emoji: "💧", mother: "레아",  note: "장남" },
-      { id: 2,  ko: "시므온",   en: "Simeon",    emoji: "⚔️", mother: "레아",  note: "둘째" },
-      { id: 3,  ko: "레위",     en: "Levi",      emoji: "📜", mother: "레아",  note: "제사장 지파" },
-      { id: 4,  ko: "유다",     en: "Judah",     emoji: "🦁", mother: "레아",  note: "사자 · 왕의 지파" },
-      { id: 5,  ko: "단",       en: "Dan",       emoji: "🐍", mother: "빌하",  note: "뱀" },
-      { id: 6,  ko: "납달리",   en: "Naphtali",  emoji: "🦌", mother: "빌하",  note: "놓인 사슴" },
-      { id: 7,  ko: "갓",       en: "Gad",       emoji: "🛡️", mother: "실바",  note: "군대" },
-      { id: 8,  ko: "아셀",     en: "Asher",     emoji: "🫒", mother: "실바",  note: "기름진 땅" },
-      { id: 9,  ko: "잇사갈",   en: "Issachar",  emoji: "🐴", mother: "레아",  note: "강건한 나귀" },
-      { id: 10, ko: "스불론",   en: "Zebulun",   emoji: "⛵", mother: "레아",  note: "바닷가" },
-      { id: 11, ko: "요셉",     en: "Joseph",    emoji: "🌾", mother: "라헬",  note: "이삭 묶음" },
-      { id: 12, ko: "베냐민",   en: "Benjamin",  emoji: "🐺", mother: "라헬",  note: "늑대" },
+      { id: 1,  ko: "르우벤",   en: "Reuben",    img: "./assets/images/reuben.png",   mother: "레아",  note: "장남" },
+      { id: 2,  ko: "시므온",   en: "Simeon",    img: "./assets/images/simeon.png",   mother: "레아",  note: "둘째" },
+      { id: 3,  ko: "레위",     en: "Levi",      img: "./assets/images/levi.png",     mother: "레아",  note: "제사장 지파" },
+      { id: 4,  ko: "유다",     en: "Judah",     img: "./assets/images/judah.png",    mother: "레아",  note: "사자 · 왕의 지파" },
+      { id: 5,  ko: "단",       en: "Dan",       img: "./assets/images/dan.png",      mother: "빌하",  note: "뱀" },
+      { id: 6,  ko: "납달리",   en: "Naphtali",  img: "./assets/images/naphtali.png", mother: "빌하",  note: "놓인 사슴" },
+      { id: 7,  ko: "갓",       en: "Gad",       img: "./assets/images/gad.png",      mother: "실바",  note: "군대" },
+      { id: 8,  ko: "아셀",     en: "Asher",     img: "./assets/images/asher.png",    mother: "실바",  note: "기름진 땅" },
+      { id: 9,  ko: "잇사갈",   en: "Issachar",  img: "./assets/images/issachar.png", mother: "레아",  note: "강건한 나귀" },
+      { id: 10, ko: "스불론",   en: "Zebulun",   img: "./assets/images/zebulun.png",  mother: "레아",  note: "바닷가" },
+      { id: 11, ko: "요셉",     en: "Joseph",    img: "./assets/images/joseph.png",   mother: "라헬",  note: "이삭 묶음" },
+      { id: 12, ko: "베냐민",   en: "Benjamin",  img: "./assets/images/benjamin.png", mother: "라헬",  note: "늑대" },
     ];
 
     function shuffleArr(arr) {
@@ -320,7 +320,7 @@
                   transition: 'all 0.2s',
                 }}>
                   <div style={{ fontSize: '0.72em', color: '#64748b' }}>{i + 1}번</div>
-                  <div style={{ fontSize: '1.7em' }}>{s.emoji}</div>
+                  <img src={s.img} alt={s.ko} draggable={false} style={{ width: '100%', aspectRatio: '1/1', objectFit: 'cover', borderRadius: 8, margin: '4px 0', pointerEvents: 'none' }} />
                   <div style={{ fontWeight: 700, fontSize: '0.92em' }}>{s.ko}</div>
                   <div style={{ fontSize: '0.75em', color: '#6b7280' }}>{s.en}</div>
                 </div>
@@ -416,8 +416,21 @@
                   }}>
                     {i + 1}번 자리
                   </div>
-                  <div style={{ fontSize: isMobile ? '2.3em' : '2.8em', lineHeight: 1, marginTop: 10, marginBottom: 6 }}>
-                    {item.emoji}
+                  <div style={{ marginTop: 20, marginBottom: 6, display: 'flex', justifyContent: 'center' }}>
+                    <img
+                      src={item.img}
+                      alt={item.ko}
+                      draggable={false}
+                      style={{
+                        width: isMobile ? 78 : 108,
+                        height: isMobile ? 78 : 108,
+                        borderRadius: 14,
+                        objectFit: 'cover',
+                        boxShadow: '0 4px 10px rgba(0,0,0,0.08)',
+                        userSelect: 'none',
+                        pointerEvents: 'none',
+                      }}
+                    />
                   </div>
                   <div style={{ fontSize: isMobile ? '1em' : '1.1em', fontWeight: 800 }}>
                     {item.ko}
