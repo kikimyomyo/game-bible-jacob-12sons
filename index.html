@@ -223,14 +223,45 @@
         const i = intro.i;
         if (i >= ANSWER.length) { setIntro({ i: -1, playing: false }); return; }
         const item = ANSWER[i];
-        window.speechSynthesis.cancel();
-        // 순번 한국어 → 이름 한국어 → 이름 영어 순차
-        speakQueue([
-          { text: `${i + 1}번, ${item.ko}`, lang: 'ko-KR' },
-          { text: item.en, lang: 'en-US' },
-        ]);
-        const t = setTimeout(() => setIntro({ i: i + 1, playing: true }), 1800);
-        return () => clearTimeout(t);
+        try { window.speechSynthesis.cancel(); } catch (e) {}
+
+        // 한국어 "N번, 이름" → 영어 "이름" 순차 체인, onend 이후 다음 카드
+        let advanced = false;
+        const advance = () => {
+          if (advanced) return;
+          advanced = true;
+          setIntro((prev) => (prev.playing && prev.i === i ? { i: i + 1, playing: true } : prev));
+        };
+
+        const uKo = window.GameTTS ? null : null; // 아래에서 makeUtterance 사용
+        const utterKo = new SpeechSynthesisUtterance(`${i + 1}번, ${item.ko}`);
+        utterKo.lang = 'ko-KR';
+        utterKo.rate = 1.0;
+
+        const utterEn = new SpeechSynthesisUtterance(item.en);
+        utterEn.lang = 'en-US';
+        utterEn.rate = 0.9;
+
+        // 가능하면 각 언어 voice 명시
+        try {
+          const voices = window.speechSynthesis.getVoices() || [];
+          const pick = (prefix) => voices.find((v) => v.lang && v.lang.toLowerCase().startsWith(prefix)) || null;
+          const koVoice = pick('ko');
+          const enVoice = pick('en');
+          if (koVoice) utterKo.voice = koVoice;
+          if (enVoice) utterEn.voice = enVoice;
+        } catch (e) {}
+
+        utterEn.onend = () => setTimeout(advance, 300);
+        utterEn.onerror = () => setTimeout(advance, 300);
+
+        // 한국어 → 영어 순차 재생
+        window.speechSynthesis.speak(utterKo);
+        window.speechSynthesis.speak(utterEn);
+
+        // 안전장치: 6초 내 onend 안 오면 강제 다음
+        const fallback = setTimeout(advance, 6000);
+        return () => clearTimeout(fallback);
       }, [intro]);
 
       function stopIntro() {
