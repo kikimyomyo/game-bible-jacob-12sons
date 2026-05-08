@@ -349,7 +349,7 @@
                   transition: 'all 0.2s',
                 }}>
                   <div style={{ fontSize: '0.72em', color: '#64748b' }}>{i + 1}번</div>
-                  <img src={s.img} alt={s.ko} draggable={false} style={{ width: '100%', aspectRatio: '1/1', objectFit: 'cover', borderRadius: 8, margin: '4px 0', pointerEvents: 'none' }} />
+                  <img src={s.img} alt={s.ko} draggable={false} style={{ width: '100%', aspectRatio: '1/1', objectFit: 'contain', background: '#fff', borderRadius: 8, margin: '4px 0', pointerEvents: 'none' }} />
                   <div style={{ fontWeight: 700, fontSize: '0.92em' }}>{s.ko}</div>
                   <div style={{ fontSize: '0.75em', color: '#6b7280' }}>{s.en}</div>
                 </div>
@@ -454,7 +454,8 @@
                         width: isMobile ? 78 : 108,
                         height: isMobile ? 78 : 108,
                         borderRadius: 14,
-                        objectFit: 'cover',
+                        objectFit: 'contain',
+                        background: '#fff',
                         boxShadow: '0 4px 10px rgba(0,0,0,0.08)',
                         userSelect: 'none',
                         pointerEvents: 'none',
