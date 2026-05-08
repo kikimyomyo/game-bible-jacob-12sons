@@ -190,7 +190,11 @@
       const slotRefs = useRef(Array.from({ length: ANSWER.length }, () => null));
       const sortablesRef = useRef([]);
 
-      // 두 영역 SortableJS — pool ↔ slots, 슬롯은 1장만
+      // 두 영역 SortableJS — pool ↔ slots, 슬롯은 1장만.
+      // SortableJS DOM 변경 즉시 원복 → evt 기반 React state 업데이트 (가상DOM 충돌 회피).
+      const stateRef = useRef({ order, poolOrder });
+      stateRef.current = { order, poolOrder };
+
       useEffect(() => {
         if (phase !== 'play' || checked) {
           sortablesRef.current.forEach(s => s && s.destroy());
@@ -198,33 +202,68 @@
           return;
         }
         if (!window.Sortable) return;
-        const sortables = [];
-        const syncFromDOM = () => {
-          const newSlots = slotRefs.current.map((el) => {
-            if (!el) return null;
-            const child = el.querySelector('[data-id]');
-            if (!child) return null;
-            return ANSWER.find(a => a.id === Number(child.dataset.id)) || null;
-          });
-          const newPool = poolRef.current
-            ? Array.from(poolRef.current.children)
-                .map(c => ANSWER.find(a => a.id === Number(c.dataset.id)))
-                .filter(Boolean)
-            : [];
-          setOrder(newSlots);
+
+        const handleEnd = (evt) => {
+          try {
+            const refNode = evt.from.children[evt.oldIndex] || null;
+            evt.from.insertBefore(evt.item, refNode);
+          } catch (e) {}
+
+          const cardId = Number(evt.item.dataset.id);
+          const card = ANSWER.find(a => a.id === cardId);
+          if (!card) return;
+
+          const fromIsPool = evt.from === poolRef.current;
+          const toIsPool = evt.to === poolRef.current;
+          const fromSlotIdx = fromIsPool ? -1 : slotRefs.current.indexOf(evt.from);
+          const toSlotIdx = toIsPool ? -1 : slotRefs.current.indexOf(evt.to);
+
+          const cur = stateRef.current;
+          const newOrder = [...cur.order];
+          const newPool = [...cur.poolOrder];
+
+          if (fromIsPool && toIsPool) {
+            const oldIdx = newPool.findIndex(c => c.id === cardId);
+            if (oldIdx < 0) return;
+            newPool.splice(oldIdx, 1);
+            const insertAt = Math.min(evt.newIndex, newPool.length);
+            newPool.splice(insertAt, 0, card);
+            setPoolOrder(newPool);
+            sfx.click();
+            return;
+          }
+
+          if (fromIsPool) {
+            const idx = newPool.findIndex(c => c.id === cardId);
+            if (idx >= 0) newPool.splice(idx, 1);
+          } else if (fromSlotIdx >= 0) {
+            newOrder[fromSlotIdx] = null;
+          }
+
+          if (toIsPool) {
+            newPool.push(card);
+          } else if (toSlotIdx >= 0) {
+            const evicted = newOrder[toSlotIdx];
+            if (evicted && evicted.id !== card.id) newPool.push(evicted);
+            newOrder[toSlotIdx] = card;
+          }
+
+          setOrder(newOrder);
           setPoolOrder(newPool);
           sfx.click();
         };
+
+        const sortables = [];
         if (poolRef.current) {
           sortables.push(window.Sortable.create(poolRef.current, {
             group: 'j12-cards',
-            animation: 220,
-            delay: 120,
+            animation: 200,
+            delay: 100,
             delayOnTouchOnly: true,
             ghostClass: 'son-ghost',
             chosenClass: 'son-chosen',
             onChoose: () => sfx.tap(),
-            onEnd: syncFromDOM,
+            onEnd: handleEnd,
           }));
         }
         slotRefs.current.forEach((el) => {
@@ -234,13 +273,13 @@
               name: 'j12-cards',
               put: (to) => to.el.children.length === 0,
             },
-            animation: 220,
-            delay: 120,
+            animation: 200,
+            delay: 100,
             delayOnTouchOnly: true,
             ghostClass: 'son-ghost',
             chosenClass: 'son-chosen',
             onChoose: () => sfx.tap(),
-            onEnd: syncFromDOM,
+            onEnd: handleEnd,
           }));
         });
         sortablesRef.current = sortables;
@@ -248,7 +287,7 @@
           sortables.forEach(s => s.destroy());
           sortablesRef.current = [];
         };
-      }, [phase, checked, order, poolOrder]);
+      }, [phase, checked]);
 
       // 학습 모드: 1~12 순서대로 읽기
       function startIntro() {
