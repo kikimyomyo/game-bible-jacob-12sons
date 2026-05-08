@@ -180,38 +180,75 @@
     function GameBody({ player, submit }) {
       const isMobile = useIsMobile();
       const [phase, setPhase] = useState('intro');   // 'intro' | 'play' | 'result'
-      const [order, setOrder] = useState(() => shuffleArr(ANSWER));
+      // order = 슬롯 12개 (각 슬롯이 카드 또는 null). poolOrder = 정리 안 된 카드들의 표시 순서
+      const [order, setOrder] = useState(() => Array(ANSWER.length).fill(null));
+      const [poolOrder, setPoolOrder] = useState(() => shuffleArr(ANSWER));
       const [checked, setChecked] = useState(false);
       const [hintsUsed, setHintsUsed] = useState(0);
       const [intro, setIntro] = useState({ i: -1, playing: false }); // 학습 모드
-      const listRef = useRef(null);
-      const sortableRef = useRef(null);
+      const poolRef = useRef(null);
+      const slotRefs = useRef(Array.from({ length: ANSWER.length }, () => null));
+      const sortablesRef = useRef([]);
 
-      // SortableJS 생성/해제
+      // 두 영역 SortableJS — pool ↔ slots, 슬롯은 1장만
       useEffect(() => {
         if (phase !== 'play' || checked) {
-          if (sortableRef.current) { sortableRef.current.destroy(); sortableRef.current = null; }
+          sortablesRef.current.forEach(s => s && s.destroy());
+          sortablesRef.current = [];
           return;
         }
-        if (!listRef.current || !window.Sortable) return;
-        sortableRef.current = window.Sortable.create(listRef.current, {
-          animation: 220,
-          delay: 120,
-          delayOnTouchOnly: true,
-          ghostClass: 'son-ghost',
-          chosenClass: 'son-chosen',
-          onChoose: () => sfx.tap(),
-          onEnd: () => {
-            const ids = Array.from(listRef.current.children).map((c) => Number(c.dataset.id));
-            const next = ids.map((id) => ANSWER.find((a) => a.id === id));
-            setOrder(next);
-            sfx.click();
-          },
-        });
-        return () => {
-          if (sortableRef.current) { sortableRef.current.destroy(); sortableRef.current = null; }
+        if (!window.Sortable) return;
+        const sortables = [];
+        const syncFromDOM = () => {
+          const newSlots = slotRefs.current.map((el) => {
+            if (!el) return null;
+            const child = el.querySelector('[data-id]');
+            if (!child) return null;
+            return ANSWER.find(a => a.id === Number(child.dataset.id)) || null;
+          });
+          const newPool = poolRef.current
+            ? Array.from(poolRef.current.children)
+                .map(c => ANSWER.find(a => a.id === Number(c.dataset.id)))
+                .filter(Boolean)
+            : [];
+          setOrder(newSlots);
+          setPoolOrder(newPool);
+          sfx.click();
         };
-      }, [phase, checked]);
+        if (poolRef.current) {
+          sortables.push(window.Sortable.create(poolRef.current, {
+            group: 'j12-cards',
+            animation: 220,
+            delay: 120,
+            delayOnTouchOnly: true,
+            ghostClass: 'son-ghost',
+            chosenClass: 'son-chosen',
+            onChoose: () => sfx.tap(),
+            onEnd: syncFromDOM,
+          }));
+        }
+        slotRefs.current.forEach((el) => {
+          if (!el) return;
+          sortables.push(window.Sortable.create(el, {
+            group: {
+              name: 'j12-cards',
+              put: (to) => to.el.children.length === 0,
+            },
+            animation: 220,
+            delay: 120,
+            delayOnTouchOnly: true,
+            ghostClass: 'son-ghost',
+            chosenClass: 'son-chosen',
+            onChoose: () => sfx.tap(),
+            onEnd: syncFromDOM,
+          }));
+        });
+        sortablesRef.current = sortables;
+        return () => {
+          sortables.forEach(s => s.destroy());
+          sortablesRef.current = [];
+        };
+      }, [phase, checked, order, poolOrder]);
 
       // 학습 모드: 1~12 순서대로 읽기
       function startIntro() {
@@ -269,31 +306,41 @@
 
       function reshuffle() {
         sfx.click();
-        setOrder(shuffleArr(ANSWER));
+        setOrder(Array(ANSWER.length).fill(null));
+        setPoolOrder(shuffleArr(ANSWER));
         setChecked(false);
       }
 
       function useHint() {
         if (checked) return;
         sfx.click();
-        const wrongPositions = order
-          .map((item, i) => (item.id !== ANSWER[i].id ? i : -1))
-          .filter((i) => i >= 0);
-        if (!wrongPositions.length) return;
-        const targetPos = wrongPositions[Math.floor(Math.random() * wrongPositions.length)];
-        const correctItem = ANSWER[targetPos];
-        const currentIdx = order.findIndex((it) => it.id === correctItem.id);
-        if (currentIdx < 0 || currentIdx === targetPos) return;
-        const next = [...order];
-        [next[targetPos], next[currentIdx]] = [next[currentIdx], next[targetPos]];
-        setOrder(next);
-        setHintsUsed((h) => h + 1);
+        const wrongOrEmpty = order
+          .map((it, i) => (!it || it.id !== ANSWER[i].id) ? i : -1)
+          .filter(i => i >= 0);
+        if (!wrongOrEmpty.length) return;
+        const targetPos = wrongOrEmpty[Math.floor(Math.random() * wrongOrEmpty.length)];
+        const correctCard = ANSWER[targetPos];
+        const evicted = order[targetPos];
+        const inPoolIdx = poolOrder.findIndex(c => c.id === correctCard.id);
+        const inSlotIdx = order.findIndex((c, i) => c && c.id === correctCard.id && i !== targetPos);
+        const newOrder = [...order];
+        const newPool = [...poolOrder];
+        if (inPoolIdx >= 0) {
+          newPool.splice(inPoolIdx, 1);
+          if (evicted) newPool.push(evicted);
+        } else if (inSlotIdx >= 0) {
+          newOrder[inSlotIdx] = evicted;
+        }
+        newOrder[targetPos] = correctCard;
+        setOrder(newOrder);
+        setPoolOrder(newPool);
+        setHintsUsed(h => h + 1);
       }
 
       function checkAnswers() {
         sfx.click();
         setChecked(true);
-        const correctCount = order.filter((it, i) => it.id === ANSWER[i].id).length;
+        const correctCount = order.filter((it, i) => it && it.id === ANSWER[i].id).length;
         setTimeout(() => {
           if (correctCount === 12) sfx.correct();
           else if (correctCount >= 8) sfx.partial();
@@ -303,14 +350,14 @@
 
       function finish() {
         sfx.finish();
-        const score = order.filter((it, i) => it.id === ANSWER[i].id).length;
+        const score = order.filter((it, i) => it && it.id === ANSWER[i].id).length;
         submit({
           score, total: 12,
           answers: order.map((it, i) => ({
             position: i + 1,
             expected: ANSWER[i].ko,
-            chosen: it.ko,
-            ok: it.id === ANSWER[i].id,
+            chosen: it ? it.ko : '비어있음',
+            ok: it ? it.id === ANSWER[i].id : false,
           })),
           meta: { hints_used: hintsUsed },
         });
@@ -319,13 +366,15 @@
 
       function playAgain() {
         sfx.click();
-        setOrder(shuffleArr(ANSWER));
+        setOrder(Array(ANSWER.length).fill(null));
+        setPoolOrder(shuffleArr(ANSWER));
         setChecked(false);
         setHintsUsed(0);
         setPhase('play');
       }
 
-      const correctCount = order.filter((it, i) => it.id === ANSWER[i].id).length;
+      const correctCount = order.filter((it, i) => it && it.id === ANSWER[i].id).length;
+      const allFilled = order.every(Boolean);
 
       // ─── 인트로(시작 안내) ───
       if (phase === 'intro') {
@@ -384,102 +433,144 @@
         );
       }
 
-      // ─── 플레이 화면 ───
-      const cols = isMobile ? 2 : 4;
+      // ─── 플레이 화면: 좌(카드 풀) + 우(슬롯 1~12 세로 + ↓ 화살표) ───
+      const tapToSpeak = (card) => {
+        sfx.tap();
+        try { window.speechSynthesis.cancel(); } catch(e){}
+        window.GameTTS.speakQueue([
+          { text: card.ko, lang: 'ko-KR' },
+          { text: card.mother + '의 아들', lang: 'ko-KR' },
+        ]);
+      };
       return (
-        <div style={{ maxWidth: 900, margin: '14px auto', padding: isMobile ? 10 : 20 }}>
+        <div style={{ maxWidth: 1100, margin: '12px auto', padding: isMobile ? 8 : 20 }}>
           <style>{`
             .son-ghost { opacity: 0.35; }
             .son-chosen { transform: scale(1.06); box-shadow: 0 12px 28px rgba(99,102,241,0.35); }
           `}</style>
-          <div style={{ background: 'white', borderRadius: 18, padding: isMobile ? 14 : 20, boxShadow: '0 6px 18px rgba(0,0,0,0.06)', marginBottom: 14 }}>
+
+          <div style={{ background: 'white', borderRadius: 18, padding: isMobile ? 12 : 18, boxShadow: '0 6px 18px rgba(0,0,0,0.06)', marginBottom: 12 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-              <h3 style={{ fontWeight: 800, fontSize: isMobile ? '1.05em' : '1.2em' }}>
-                🙋 {player} · 드래그해서 1번부터 12번 자리까지 순서대로!
+              <h3 style={{ fontWeight: 800, fontSize: isMobile ? '0.95em' : '1.2em' }}>
+                🙋 {player} · 카드를 빈칸에 순서대로 옮겨요!
               </h3>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                <button onClick={reshuffle} style={smallBtn('#94a3b8')}>🔀 다시 섞기</button>
-                <button onClick={useHint} style={smallBtn('#f59e0b')}>💡 힌트 ({hintsUsed}회)</button>
+                <button onClick={reshuffle} style={smallBtn('#94a3b8')}>🔀 섞기</button>
+                <button onClick={useHint} style={smallBtn('#f59e0b')}>💡 힌트 ({hintsUsed})</button>
               </div>
             </div>
             {checked && (
               <div style={{
-                marginTop: 12, padding: 12, borderRadius: 12,
+                marginTop: 10, padding: 10, borderRadius: 12,
                 background: correctCount === 12 ? '#d1fae5' : correctCount >= 8 ? '#fef3c7' : '#fee2e2',
-                color: '#1f2937', fontWeight: 700,
+                color: '#1f2937', fontWeight: 700, fontSize: isMobile ? '0.92em' : '1em',
               }}>
-                {correctCount === 12 ? '🎉 완벽해요! 12명 모두 맞았어요!' : `✏️ ${correctCount}/12 맞음 — 빨간 카드를 다시 옮겨보세요.`}
+                {correctCount === 12 ? '🎉 완벽해요! 12명 모두 맞았어요!' : `✏️ ${correctCount}/12 맞음 — 빨간 자리를 고쳐보세요`}
               </div>
             )}
           </div>
 
-          <div
-            ref={listRef}
-            style={{
-              display: 'grid',
-              gridTemplateColumns: `repeat(${cols}, 1fr)`,
-              gap: isMobile ? 8 : 12,
-              touchAction: 'none',
-            }}
-          >
-            {order.map((item, i) => {
-              const ok = checked && item.id === ANSWER[i].id;
-              const wrong = checked && item.id !== ANSWER[i].id;
-              return (
-                <div
-                  key={item.id}
-                  data-id={item.id}
-                  style={{
-                    background: ok ? '#d1fae5' : wrong ? '#fee2e2' : 'white',
-                    border: '3px solid ' + (ok ? '#10b981' : wrong ? '#ef4444' : '#e5e7eb'),
-                    borderRadius: 16, padding: isMobile ? 10 : 14, textAlign: 'center',
-                    cursor: checked ? 'default' : 'grab',
-                    userSelect: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
-                    position: 'relative', minHeight: isMobile ? 128 : 150,
-                  }}
-                >
-                  <div style={{
-                    position: 'absolute', top: 6, left: 8,
-                    fontSize: '0.72em', fontWeight: 800,
-                    color: ok ? '#065f46' : wrong ? '#991b1b' : '#64748b',
-                  }}>
-                    {i + 1}번 자리
+          {/* 좌·우 분할 */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: isMobile ? '1.05fr 0.95fr' : '1.15fr 1fr',
+            gap: isMobile ? 8 : 14,
+            touchAction: 'none',
+          }}>
+            {/* 좌측: 정리 안 된 카드 */}
+            <div style={{ background: '#eef2ff', borderRadius: 16, padding: isMobile ? 6 : 10 }}>
+              <div style={{ fontSize: isMobile ? '0.78em' : '0.9em', fontWeight: 800, color: '#475569', textAlign: 'center', marginBottom: 6 }}>
+                정리 안 된 카드
+              </div>
+              <div ref={poolRef} style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(2, 1fr)',
+                gap: isMobile ? 5 : 8,
+                minHeight: 220,
+              }}>
+                {poolOrder.map(card => (
+                  <div key={card.id} data-id={card.id}
+                    onClick={() => !checked && tapToSpeak(card)}
+                    style={{
+                      background: 'white', borderRadius: 12, padding: isMobile ? 4 : 6, textAlign: 'center',
+                      cursor: checked ? 'default' : 'grab', userSelect: 'none',
+                      boxShadow: '0 2px 6px rgba(0,0,0,0.06)',
+                    }}>
+                    <img src={card.img} alt={card.ko} draggable={false} style={{
+                      width: '100%', aspectRatio: '1/1', objectFit: 'contain', background: '#fff',
+                      borderRadius: 8, pointerEvents: 'none',
+                    }} />
+                    <div style={{ fontSize: isMobile ? '0.95em' : '1.15em', fontWeight: 900, marginTop: 2, color: '#1f2937', lineHeight: 1.1 }}>
+                      {card.ko}
+                    </div>
                   </div>
-                  <div style={{ marginTop: 20, marginBottom: 6, display: 'flex', justifyContent: 'center' }}>
-                    <img
-                      src={item.img}
-                      alt={item.ko}
-                      draggable={false}
-                      style={{
-                        width: isMobile ? 78 : 108,
-                        height: isMobile ? 78 : 108,
-                        borderRadius: 14,
-                        objectFit: 'contain',
-                        background: '#fff',
-                        boxShadow: '0 4px 10px rgba(0,0,0,0.08)',
-                        userSelect: 'none',
-                        pointerEvents: 'none',
-                      }}
-                    />
-                  </div>
-                  <div style={{ fontSize: isMobile ? '1em' : '1.1em', fontWeight: 800 }}>
-                    {item.ko}
-                  </div>
-                  <div style={{ fontSize: '0.78em', color: '#6b7280', marginBottom: 6 }}>
-                    {item.en}
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'center', gap: 4 }}>
-                    <SpeakIcon text={item.ko} lang="ko-KR" size={14} color="rgba(99,102,241,0.15)" />
-                    <SpeakIcon text={item.en} lang="en-US" size={14} color="rgba(16,185,129,0.15)" />
-                  </div>
-                </div>
-              );
-            })}
+                ))}
+              </div>
+            </div>
+
+            {/* 우측: 슬롯 1~12 세로 + ↓ 화살표 */}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 0 }}>
+              {ANSWER.map((_, i) => {
+                const card = order[i];
+                const isOk = checked && card && card.id === ANSWER[i].id;
+                const isWrong = checked && card && card.id !== ANSWER[i].id;
+                return (
+                  <React.Fragment key={i}>
+                    <div style={{
+                      background: isOk ? '#d1fae5' : isWrong ? '#fee2e2' : '#fff',
+                      border: '3px solid ' + (isOk ? '#10b981' : isWrong ? '#ef4444' : '#cbd5e1'),
+                      borderRadius: 14,
+                      padding: isMobile ? 4 : 6,
+                      display: 'flex', alignItems: 'center', gap: isMobile ? 4 : 8,
+                      minHeight: isMobile ? 56 : 76,
+                    }}>
+                      <div style={{
+                        fontSize: isMobile ? '0.92em' : '1.3em', fontWeight: 900,
+                        color: isOk ? '#065f46' : isWrong ? '#991b1b' : '#64748b',
+                        minWidth: isMobile ? 22 : 36, textAlign: 'center',
+                      }}>{i + 1}</div>
+                      <div ref={el => slotRefs.current[i] = el} style={{
+                        flex: 1,
+                        minHeight: isMobile ? 50 : 68,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        border: card ? 'none' : '2px dashed #cbd5e1',
+                        borderRadius: 10,
+                        background: card ? 'transparent' : 'rgba(255,255,255,0.55)',
+                      }}>
+                        {card && (
+                          <div data-id={card.id}
+                            onClick={() => !checked && tapToSpeak(card)}
+                            style={{
+                              width: '100%', cursor: checked ? 'default' : 'grab', userSelect: 'none',
+                              display: 'flex', alignItems: 'center', gap: 6,
+                              padding: '2px 4px',
+                            }}>
+                            <img src={card.img} alt={card.ko} draggable={false} style={{
+                              width: isMobile ? 42 : 56, height: isMobile ? 42 : 56,
+                              aspectRatio: '1/1', objectFit: 'contain', background: '#fff',
+                              borderRadius: 8, pointerEvents: 'none', flexShrink: 0,
+                            }} />
+                            <div style={{ fontWeight: 900, fontSize: isMobile ? '0.95em' : '1.2em', color: '#1f2937' }}>
+                              {card.ko}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    {i < ANSWER.length - 1 && (
+                      <div style={{ fontSize: isMobile ? '0.95em' : '1.2em', color: '#94a3b8', textAlign: 'center', padding: '1px 0' }}>↓</div>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </div>
           </div>
 
-          <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap', marginTop: 18 }}>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap', marginTop: 16 }}>
             {!checked ? (
-              <button onClick={checkAnswers} style={btn('#6366f1')}>✅ 정답 확인</button>
+              <button onClick={checkAnswers} style={btn(allFilled ? '#6366f1' : '#94a3b8')}>
+                {allFilled ? '✅ 정답 확인' : `🪧 ${order.filter(Boolean).length}/12 — 카드를 더 옮겨요`}
+              </button>
             ) : correctCount === 12 ? (
               <button onClick={finish} style={btn('#10b981')}>🎉 완료하고 기록하기</button>
             ) : (
