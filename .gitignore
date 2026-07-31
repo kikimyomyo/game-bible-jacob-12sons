@@ -1,2 +1,10 @@
 node_modules/
 assets/images/_old_png/
+.wrangler/
+
+# intro/ 영상 생성 파이프라인의 재생성 가능한 중간 산출물
+# (라이브에 배포되는 intro/jacob_12sons_intro.mp4 자체는 커밋 대상 — 아래는 빌드 캐시만 제외)
+intro/__pycache__/
+intro/_runtime_config.json
+intro/audio_tts/
+intro/media/

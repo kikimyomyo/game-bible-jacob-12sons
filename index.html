@@ -8,7 +8,7 @@
   <!-- React 18 + Babel standalone -->
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.7/babel.min.js"></script>
 
   <!-- Tailwind CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -32,6 +32,15 @@
   </style>
 </head>
 <body>
+  <!-- 인트로 영상 (자동 재생 후 사라짐, 클릭으로 스킵 가능) -->
+  <video id="intro-video"
+         src="./intro/jacob_12sons_intro.mp4"
+         autoplay muted playsinline
+         onended="this.style.display='none'"
+         onclick="this.style.display='none'"
+         style="position:fixed; top:0; left:0; width:100%; height:100vh; object-fit:contain; background:#ffffff; z-index:9999; cursor:pointer;">
+  </video>
+
   <div id="root"></div>
 
   <script type="text/babel" data-presets="react">
