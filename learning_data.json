@@ -1,0 +1,25 @@
+{
+  "title": "야곱",
+  "subtitle": "12 아들을 낳았어요",
+  "intro_text": "야곱이 12명의 아들을 낳았어요",
+  "final_text": "→ 이스라엘 12 지파",
+  "final_text_tts": "이스라엘 열두 지파를 모두 알았어요",
+  "victory_title": "🎉  모두 맞췄어요!",
+  "victory_subtitle": "이스라엘 12 지파를 다 익혔어요",
+  "grid_cols": 4,
+  "padding": 0.8,
+  "entities": [
+    {"name": "르우벤", "image": "reuben.png",    "color": "#1A4D8F", "meaning": "보아라, 아들",   "tts_text": "첫째 르우벤. 뜻은 보아라 아들"},
+    {"name": "시므온", "image": "simeon.png",    "color": "#0F6B6B", "meaning": "들으심",         "tts_text": "둘째 시므온. 뜻은 들으심"},
+    {"name": "레위",   "image": "levi.png",      "color": "#8B6914", "meaning": "연합",           "tts_text": "셋째 레위. 뜻은 연합"},
+    {"name": "유다",   "image": "judah.png",     "color": "#7A1A1A", "meaning": "찬송",           "tts_text": "넷째 유다. 뜻은 찬송"},
+    {"name": "단",     "image": "dan.png",       "color": "#1F5C2C", "meaning": "심판",           "tts_text": "다섯째 단. 뜻은 심판"},
+    {"name": "납달리", "image": "naphtali.png",  "color": "#5A2A7A", "meaning": "씨름",           "tts_text": "여섯째 납달리. 뜻은 씨름"},
+    {"name": "갓",     "image": "gad.png",       "color": "#B25500", "meaning": "복",             "tts_text": "일곱째 갓. 뜻은 복"},
+    {"name": "아셀",   "image": "asher.png",     "color": "#A0306B", "meaning": "기쁨",           "tts_text": "여덟째 아셀. 뜻은 기쁨"},
+    {"name": "잇사갈", "image": "issachar.png",  "color": "#4A2F1A", "meaning": "값",             "tts_text": "아홉째 잇사갈. 뜻은 값"},
+    {"name": "스불론", "image": "zebulun.png",   "color": "#1F4A6E", "meaning": "거주",           "tts_text": "열째 스불론. 뜻은 거주"},
+    {"name": "요셉",   "image": "joseph.png",    "color": "#A02828", "meaning": "더하심",         "tts_text": "열한째 요셉. 뜻은 더하심"},
+    {"name": "베냐민", "image": "benjamin.png",  "color": "#2A2A6E", "meaning": "오른손의 아들", "tts_text": "열두째 베냐민. 뜻은 오른손의 아들"}
+  ]
+}
